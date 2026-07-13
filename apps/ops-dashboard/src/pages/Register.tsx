@@ -1,7 +1,25 @@
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
-import { parseApiError } from '../utils/apiError';
+
+function parseFirebaseAuthError(error: unknown, fallback: string): string {
+  const firebaseError = error as { code?: string; message?: string };
+
+  switch (firebaseError.code) {
+    case 'auth/invalid-email':
+      return 'Invalid email address.';
+    case 'auth/email-already-in-use':
+      return 'An account with this email already exists.';
+    case 'auth/weak-password':
+      return 'Password must be at least 8 characters.';
+    case 'auth/operation-not-allowed':
+      return 'Email/password accounts are not enabled.';
+    case 'auth/too-many-requests':
+      return 'Too many attempts. Please try again later.';
+    default:
+      return firebaseError.message || fallback;
+  }
+}
 
 export const Register: React.FC = () => {
   const [email, setEmail] = useState('');
@@ -30,7 +48,8 @@ export const Register: React.FC = () => {
     try {
       await register(email, password);
     } catch (err: unknown) {
-      setError(parseApiError(err, 'Registration failed. Please try again.'));
+      setError(parseFirebaseAuthError(err, 'Registration failed. Please try again.'));
+    } finally {
       setLoading(false);
     }
   };

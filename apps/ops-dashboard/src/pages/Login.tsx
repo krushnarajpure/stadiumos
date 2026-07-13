@@ -1,7 +1,25 @@
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
-import { parseApiError } from '../utils/apiError';
+
+function parseFirebaseAuthError(error: unknown, fallback: string): string {
+  const firebaseError = error as { code?: string; message?: string };
+
+  switch (firebaseError.code) {
+    case 'auth/invalid-email':
+      return 'Invalid email address.';
+    case 'auth/user-disabled':
+      return 'This account has been disabled.';
+    case 'auth/user-not-found':
+    case 'auth/wrong-password':
+    case 'auth/invalid-credential':
+      return 'Invalid email or password.';
+    case 'auth/too-many-requests':
+      return 'Too many attempts. Please try again later.';
+    default:
+      return firebaseError.message || fallback;
+  }
+}
 
 export const Login: React.FC = () => {
   const [email, setEmail] = useState('');
@@ -18,7 +36,7 @@ export const Login: React.FC = () => {
     try {
       await login(email, password);
     } catch (err: unknown) {
-      setError(parseApiError(err, 'Authentication failed. Validate credentials.'));
+      setError(parseFirebaseAuthError(err, 'Authentication failed. Validate credentials.'));
     } finally {
       setLoading(false);
     }

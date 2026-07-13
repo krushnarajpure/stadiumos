@@ -1,6 +1,19 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import api from '../services/api';
+import {
+  createUserWithEmailAndPassword,
+  signInWithEmailAndPassword,
+  signOut,
+  onAuthStateChanged,
+  User as FirebaseUser,
+} from 'firebase/auth';
+import {
+  doc,
+  setDoc,
+  getDoc,
+  serverTimestamp,
+} from 'firebase/firestore';
+import { auth, db } from '../firebase';
 
 export interface UserRole {
   name: string;
@@ -22,53 +35,86 @@ interface AuthContextType {
 
 const AuthContext = createContext<AuthContextType | null>(null);
 
+const mapFirestoreRoleToRoles = (role: string): UserRole[] => {
+  const roleName = role === 'operator' ? 'Operations Manager' : role;
+  return [{ name: roleName }];
+};
+
+const buildUserProfile = async (firebaseUser: FirebaseUser): Promise<UserProfile> => {
+  const userDoc = await getDoc(doc(db, 'users', firebaseUser.uid));
+  const data = userDoc.data();
+  const role = typeof data?.role === 'string' ? data.role : 'operator';
+
+  return {
+    id: firebaseUser.uid,
+    email: firebaseUser.email ?? '',
+    roles: mapFirestoreRoleToRoles(role),
+  };
+};
+
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [user, setUser] = useState<UserProfile | null>(null);
   const [loading, setLoading] = useState(true);
   const navigate = useNavigate();
 
   useEffect(() => {
-    const bootstrapUser = async () => {
-      const token = localStorage.getItem('stadiumos_access_token');
-      if (token) {
+    const unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
+      if (firebaseUser) {
         try {
-          const res = await api.get('/api/v1/users/me');
-          setUser(res.data);
-        } catch (e) {
-          localStorage.removeItem('stadiumos_access_token');
+          const profile = await buildUserProfile(firebaseUser);
+          setUser(profile);
+        } catch {
+          setUser({
+            id: firebaseUser.uid,
+            email: firebaseUser.email ?? '',
+            roles: mapFirestoreRoleToRoles('operator'),
+          });
         }
+      } else {
+        setUser(null);
       }
       setLoading(false);
-    };
-    bootstrapUser();
+    });
+
+    return unsubscribe;
   }, []);
 
   const login = async (email: string, pass: string) => {
-    const res = await api.post('/api/v1/auth/login', { email, password: pass });
-    const { access_token, refresh_token } = res.data;
-    
-    localStorage.setItem('stadiumos_access_token', access_token);
-    localStorage.setItem('stadiumos_refresh_token', refresh_token);
-    
-    const profileRes = await api.get('/api/v1/users/me');
-    setUser(profileRes.data);
+    const credential = await signInWithEmailAndPassword(auth, email, pass);
+    const profile = await buildUserProfile(credential.user);
+    setUser(profile);
     navigate('/');
   };
 
   const register = async (email: string, pass: string) => {
-    await api.post('/api/v1/auth/register', {
+    const credential = await createUserWithEmailAndPassword(auth, email, pass);
+    const { uid } = credential.user;
+
+    await setDoc(doc(db, 'users', uid), {
+      uid,
       email,
-      password: pass,
-      account_type: 'operator',
+      role: 'operator',
+      createdAt: serverTimestamp(),
     });
-    await login(email, pass);
+
+    setUser({
+      id: uid,
+      email,
+      roles: mapFirestoreRoleToRoles('operator'),
+    });
+    navigate('/');
   };
 
   const logout = () => {
-    localStorage.removeItem('stadiumos_access_token');
-    localStorage.removeItem('stadiumos_refresh_token');
-    setUser(null);
-    navigate('/login');
+    signOut(auth)
+      .then(() => {
+        setUser(null);
+        navigate('/login');
+      })
+      .catch(() => {
+        setUser(null);
+        navigate('/login');
+      });
   };
 
   return (
@@ -80,6 +126,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
 export const useAuth = () => {
   const context = useContext(AuthContext);
-  if (!context) throw new Error("useAuth must be called within an AuthProvider");
+  if (!context) throw new Error('useAuth must be called within an AuthProvider');
   return context;
 };
