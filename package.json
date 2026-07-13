@@ -1,0 +1,48 @@
+{
+  "name": "stadiumos-monorepo",
+  "version": "1.0.0",
+  "description": "The AI Operating System for Smart Stadiums - Nx Monorepo Workspace",
+  "private": true,
+
+  "engines": {
+    "node": "24.x"
+  },
+
+  "scripts": {
+    "start": "nx serve",
+    "dev": "npm run dev:backend & npm run dev:dashboard",
+    "dev:backend": "cd backend/fastapi-service && PYTHONPATH=$(pwd)/../.. .venv/bin/python -m uvicorn app.main:app --reload --port 8000",
+    "dev:dashboard": "cd apps/ops-dashboard && npm run dev",
+    "build": "npm run build -w ops-dashboard",
+    "test": "npm run test -w ops-dashboard --passWithNoTests",
+    "lint": "eslint apps/ops-dashboard/src",
+    "format": "prettier --write \"apps/ops-dashboard/src/**/*.{ts,tsx,css,json}\"",
+    "docker:local": "docker-compose up -d",
+    "docker:down": "docker-compose down",
+    "infra:deploy": "terraform -cwd deployment/terraform apply"
+  },
+  "workspaces": [
+    "apps/*",
+    "libs/*"
+  ],
+  "devDependencies": {
+    "@nx/devkit": "18.0.0",
+    "@nx/js": "18.0.0",
+    "@nx/react": "18.0.0",
+    "@nx/workspace": "18.0.0",
+    "@types/node": "^18.11.18",
+    "@types/react": "^18.0.28",
+    "@types/react-dom": "^18.0.11",
+    "@typescript-eslint/eslint-plugin": "^5.50.0",
+    "@typescript-eslint/parser": "^5.50.0",
+    "eslint": "^8.33.0",
+    "nx": "18.0.0",
+    "prettier": "^2.8.3",
+    "typescript": "^4.9.5"
+  },
+  "dependencies": {
+    "react": "^18.2.0",
+    "react-dom": "^18.2.0",
+    "zustand": "^4.3.3"
+  }
+}

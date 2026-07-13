@@ -1,0 +1,18 @@
+# Crowd Density Forecasting - Evaluation Report
+
+## RandomForest
+MAE:  42.65
+RMSE: 53.37
+R2:   0.9986
+
+## XGBoost
+MAE:  42.42
+RMSE: 53.23
+R2:   0.9986
+
+## CatBoost
+MAE:  42.13
+RMSE: 52.84
+R2:   0.9987
+
+**Best Model**: CatBoost (MAE: 42.13)

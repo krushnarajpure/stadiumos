@@ -1,0 +1,108 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: fastapi-service-deployment
+  namespace: stadiumos-system
+  labels:
+    app: fastapi-service
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: fastapi-service
+  template:
+    metadata:
+      labels:
+        app: fastapi-service
+    spec:
+      containers:
+      - name: fastapi-service
+        image: gcr.io/google-deepmind-stadiumos/fastapi-service:latest
+        ports:
+        - containerPort: 8080
+        envFrom:
+        - secretRef:
+            name: stadiumos-db-secrets
+        - configMapRef:
+            name: stadiumos-config
+        resources:
+          limits:
+            cpu: "2"
+            memory: 4Gi
+          requests:
+            cpu: "1"
+            memory: 2Gi
+        readinessProbe:
+          httpGet:
+            path: /health/readiness
+            port: 8080
+          initialDelaySeconds: 10
+          periodSeconds: 10
+        livenessProbe:
+          httpGet:
+            path: /health/liveness
+            port: 8080
+          initialDelaySeconds: 15
+          periodSeconds: 20
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: fastapi-service
+  namespace: stadiumos-system
+spec:
+  ports:
+  - port: 8080
+    targetPort: 8080
+  selector:
+    app: fastapi-service
+  type: ClusterIP
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: ops-dashboard-deployment
+  namespace: stadiumos-system
+  labels:
+    app: ops-dashboard
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: ops-dashboard
+  template:
+    metadata:
+      labels:
+        app: ops-dashboard
+    spec:
+      containers:
+      - name: ops-dashboard
+        image: gcr.io/google-deepmind-stadiumos/ops-dashboard:latest
+        ports:
+        - containerPort: 80
+        resources:
+          limits:
+            cpu: "1"
+            memory: 1Gi
+          requests:
+            cpu: "500m"
+            memory: 512Mi
+        readinessProbe:
+          httpGet:
+            path: /
+            port: 80
+          initialDelaySeconds: 5
+          periodSeconds: 10
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: ops-dashboard
+  namespace: stadiumos-system
+spec:
+  ports:
+  - port: 80
+    targetPort: 80
+  selector:
+    app: ops-dashboard
+  type: LoadBalancer

@@ -1,0 +1,43 @@
+openapi: 3.0.3
+info:
+  title: StadiumOS API Contract Gateway
+  version: 1.0.0
+  description: Shared API definitions for StadiumOS microservices (FIFA World Cup 2026).
+paths:
+  /api/v1/auth/login:
+    post:
+      summary: User Login Authentication
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                username:
+                  type: string
+                password:
+                  type: string
+              required:
+                - username
+                - password
+      responses:
+        '200':
+          description: Successful login token response.
+        '401':
+          description: Unauthorized credentials exception.
+
+  /api/v1/crowd/density:
+    get:
+      summary: Get Concourse Sector Crowd Densities
+      parameters:
+        - name: zone_id
+          in: query
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Crowd density indexes metadata response.
+        '403':
+          description: Insufficient RBAC permission scopes.

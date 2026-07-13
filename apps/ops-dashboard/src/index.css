@@ -1,0 +1,254 @@
+@import url('https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800&family=Inter:wght@300;400;500;600;700&display=swap');
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  font-family: 'Inter', system-ui, -apple-system, sans-serif;
+  background-color: #120A1D;
+  color: #F8FAFC;
+  --bg-primary: #120A1D;
+  --bg-secondary: #180F25;
+  --bg-card: #231634;
+  --bg-elevated: #332049;
+  --accent-primary: #DE638A;
+  --accent-secondary: #F7B9C4;
+  --accent-ai: #C6BADE;
+  --color-success: #22C55E;
+  --color-warning: #F59E0B;
+  --color-danger: #EF4444;
+}
+
+body {
+  background-color: #120A1D;
+  color: #F8FAFC;
+  overflow-x: hidden;
+}
+
+.font-display {
+  font-family: 'Outfit', sans-serif;
+}
+
+/* Glassmorphism Styles */
+.glass-panel {
+  background: rgba(35, 22, 52, 0.65);
+  backdrop-filter: blur(16px);
+  border: 1px solid rgba(243, 217, 229, 0.08);
+  box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.37);
+}
+
+.glass-panel-elevated {
+  background: rgba(51, 32, 73, 0.8);
+  backdrop-filter: blur(20px);
+  border: 1px solid rgba(243, 217, 229, 0.12);
+  box-shadow: 0 12px 40px 0 rgba(0, 0, 0, 0.5);
+}
+
+/* Custom Sleek Scrollbars */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: #120A1D;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #231634;
+  border-radius: 3px;
+  border: 1px solid rgba(243, 217, 229, 0.05);
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #DE638A;
+}
+
+/* Pulse animation for active alerts */
+@keyframes status-pulse {
+  0%, 100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 0.4;
+    transform: scale(1.15);
+  }
+}
+
+.pulse-indicator {
+  animation: status-pulse 2s infinite ease-in-out;
+}
+
+/* AI Copilot — Typing cursor blink */
+@keyframes typing-blink {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0; }
+}
+
+.typing-cursor::after {
+  content: '▌';
+  display: inline;
+  color: #00E5FF;
+  animation: typing-blink 0.7s steps(1) infinite;
+  font-weight: 300;
+}
+
+/* AI Copilot — Message entrance */
+@keyframes fade-in-up {
+  from {
+    opacity: 0;
+    transform: translateY(12px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.message-enter {
+  animation: fade-in-up 0.35s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+/* AI Copilot — Loading shimmer */
+@keyframes shimmer {
+  0% { background-position: -200% 0; }
+  100% { background-position: 200% 0; }
+}
+
+.shimmer-bg {
+  background: linear-gradient(
+    90deg,
+    rgba(255,255,255,0.03) 25%,
+    rgba(255,255,255,0.08) 50%,
+    rgba(255,255,255,0.03) 75%
+  );
+  background-size: 200% 100%;
+  animation: shimmer 1.8s ease-in-out infinite;
+}
+
+/* AI Copilot — Typing dots */
+@keyframes dot-bounce {
+  0%, 80%, 100% { transform: translateY(0); opacity: 0.4; }
+  40% { transform: translateY(-6px); opacity: 1; }
+}
+
+.typing-dot:nth-child(1) { animation: dot-bounce 1.2s infinite 0s; }
+.typing-dot:nth-child(2) { animation: dot-bounce 1.2s infinite 0.15s; }
+.typing-dot:nth-child(3) { animation: dot-bounce 1.2s infinite 0.3s; }
+
+/* AI Copilot — Markdown prose styling */
+.ai-prose h1, .ai-prose h2, .ai-prose h3 {
+  color: #F8FAFC;
+  font-weight: 700;
+  margin: 0.75em 0 0.35em;
+  font-family: 'Outfit', sans-serif;
+}
+.ai-prose h3 { font-size: 0.8rem; }
+.ai-prose h2 { font-size: 0.85rem; }
+.ai-prose h1 { font-size: 0.9rem; }
+
+.ai-prose p {
+  margin: 0.4em 0;
+  line-height: 1.65;
+}
+
+.ai-prose ul, .ai-prose ol {
+  padding-left: 1.25em;
+  margin: 0.35em 0;
+}
+
+.ai-prose li {
+  margin: 0.2em 0;
+  line-height: 1.55;
+}
+
+.ai-prose li::marker {
+  color: #00E5FF;
+}
+
+.ai-prose strong {
+  color: #F8FAFC;
+  font-weight: 600;
+}
+
+.ai-prose em {
+  color: #94A3B8;
+}
+
+.ai-prose code {
+  background: rgba(0, 168, 255, 0.08);
+  border: 1px solid rgba(0, 168, 255, 0.15);
+  border-radius: 4px;
+  padding: 0.1em 0.35em;
+  font-size: 0.85em;
+  font-family: 'SF Mono', 'Fira Code', monospace;
+  color: #00E5FF;
+}
+
+.ai-prose pre {
+  background: #050B1C;
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  border-radius: 10px;
+  padding: 0.85em 1em;
+  margin: 0.65em 0;
+  overflow-x: auto;
+  font-size: 0.78rem;
+}
+
+.ai-prose pre code {
+  background: none;
+  border: none;
+  padding: 0;
+  color: #CBD5E1;
+}
+
+.ai-prose table {
+  width: 100%;
+  border-collapse: collapse;
+  margin: 0.65em 0;
+  font-size: 0.75rem;
+}
+
+.ai-prose th {
+  background: rgba(0, 168, 255, 0.06);
+  color: #94A3B8;
+  font-weight: 700;
+  text-transform: uppercase;
+  font-size: 0.65rem;
+  letter-spacing: 0.08em;
+  padding: 0.55em 0.75em;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  text-align: left;
+}
+
+.ai-prose td {
+  padding: 0.5em 0.75em;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.04);
+  color: #CBD5E1;
+}
+
+.ai-prose tr:hover td {
+  background: rgba(0, 168, 255, 0.03);
+}
+
+.ai-prose blockquote {
+  border-left: 3px solid #8B5CF6;
+  padding-left: 0.85em;
+  margin: 0.5em 0;
+  color: #94A3B8;
+  font-style: italic;
+}
+
+.ai-prose a {
+  color: #00A8FF;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.ai-prose hr {
+  border: none;
+  border-top: 1px solid rgba(255, 255, 255, 0.06);
+  margin: 0.75em 0;
+}

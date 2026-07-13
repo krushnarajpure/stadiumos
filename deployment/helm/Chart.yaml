@@ -1,0 +1,16 @@
+apiVersion: v2
+name: stadiumos
+description: A Helm Chart for deploying StadiumOS microservices to Google Kubernetes Engine (GKE)
+type: application
+version: 1.0.0
+appVersion: "1.0.0"
+
+dependencies:
+  - name: postgresql
+    version: 12.1.0
+    repository: https://charts.bitnami.com/bitnami
+    condition: postgresql.enabled
+  - name: redis
+    version: 17.4.0
+    repository: https://charts.bitnami.com/bitnami
+    condition: redis.enabled

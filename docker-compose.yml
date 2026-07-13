@@ -1,0 +1,127 @@
+services:
+  # Relational Database Core
+  postgres:
+    image: postgres:15-alpine
+    container_name: stadiumos-postgres
+    environment:
+      POSTGRES_DB: ${STADIUMOS_PG_DB}
+      POSTGRES_USER: ${STADIUMOS_PG_USER}
+      POSTGRES_PASSWORD: ${STADIUMOS_PG_PASS}
+      
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${STADIUMOS_PG_USER} -d ${STADIUMOS_PG_DB}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # Ephemeral Cache Store
+  redis:
+    image: redis:7-alpine
+    container_name: stadiumos-redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redisdata:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # Kafka Coordination Node
+  zookeeper:
+    image: confluentinc/cp-zookeeper:7.3.0
+    container_name: stadiumos-zookeeper
+    environment:
+      ZOOKEEPER_CLIENT_PORT: 2181
+      ZOOKEEPER_TICK_TIME: 2000
+    ports:
+      - "2181:2181"
+
+  # Kafka Distributed Event Broker
+  kafka:
+    image: confluentinc/cp-kafka:7.3.0
+    container_name: stadiumos-kafka
+    depends_on:
+      - zookeeper
+    ports:
+      - "9092:9092"
+    environment:
+      KAFKA_BROKER_ID: 1
+      KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://localhost:9092,PLAINTEXT_INTERNAL://kafka:29092
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT,PLAINTEXT_INTERNAL:PLAINTEXT
+      KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT_INTERNAL
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+    healthcheck:
+      test: ["CMD", "kafka-topics", "--bootstrap-server", "localhost:9092", "--list"]
+      interval: 15s
+      timeout: 10s
+      retries: 5
+
+  # Core Backend Service
+  fastapi-service:
+    build:
+      context: .
+      dockerfile: backend/fastapi-service/Dockerfile
+    container_name: stadiumos-fastapi
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      kafka:
+        condition: service_healthy
+    ports:
+      - "8000:8080"
+    environment:
+      - STADIUMOS_ENV=${STADIUMOS_ENV}
+      - STADIUMOS_GATEWAY_PORT=${STADIUMOS_GATEWAY_PORT}
+      - STADIUMOS_GATEWAY_JWT_SECRET=${STADIUMOS_GATEWAY_JWT_SECRET}
+      - STADIUMOS_PG_HOST=${STADIUMOS_PG_HOST}
+      - STADIUMOS_PG_PORT=${STADIUMOS_PG_PORT}
+      - STADIUMOS_PG_DB=${STADIUMOS_PG_DB}
+      - STADIUMOS_PG_USER=${STADIUMOS_PG_USER}
+      - STADIUMOS_PG_PASS=${STADIUMOS_PG_PASS}
+      - STADIUMOS_REDIS_HOST=${STADIUMOS_REDIS_HOST}
+      - STADIUMOS_REDIS_PORT=${STADIUMOS_REDIS_PORT}
+      - STADIUMOS_KAFKA_BROKERS=${STADIUMOS_KAFKA_BROKERS}
+      - GEMINI_API_KEY=${GEMINI_API_KEY}
+      - STADIUMOS_API_HOST=${STADIUMOS_API_HOST}
+      - STADIUMOS_MODEL_PATH=${STADIUMOS_MODEL_PATH}
+      - STADIUMOS_DEMO_OPERATOR_EMAIL=${STADIUMOS_DEMO_OPERATOR_EMAIL}
+      - STADIUMOS_DEMO_OPERATOR_PASSWORD=${STADIUMOS_DEMO_OPERATOR_PASSWORD}
+      - LLM_PROVIDER=google
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8080/health/readiness')"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    env_file:
+      - path: .env
+        required: false
+
+  # Frontend Dashboard
+  ops-dashboard:
+    build:
+      context: .
+      dockerfile: apps/ops-dashboard/Dockerfile
+    container_name: stadiumos-dashboard
+    depends_on:
+      fastapi-service:
+        condition: service_healthy
+    ports:
+      - "3000:80"
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost/ || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  pgdata:
+  redisdata:

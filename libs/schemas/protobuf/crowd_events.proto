@@ -1,0 +1,13 @@
+syntax = "proto3";
+
+package stadiumos.schemas.protobuf;
+
+option go_package = "github.com/stadiumos/stadiumos/libs/schemas/protobuf/crowd";
+
+// Ingestion payload from Turnstile tripwires
+message QueueHighEvent {
+  string gate_id = 1;
+  int32 queue_length = 2;
+  int32 est_wait_seconds = 3;
+  int64 timestamp = 6;
+}
