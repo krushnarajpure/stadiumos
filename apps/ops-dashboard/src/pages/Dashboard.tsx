@@ -170,19 +170,50 @@ export const Dashboard: React.FC = () => {
       setSimulationAlert(null);
     }, 4000);
   };
+  const safeZones = Array.isArray(displayZones) ? displayZones : [];
+  const safeIncidents = Array.isArray(displayIncidents) ? displayIncidents : [];
 
+  const totalHeadcount =
+    safeZones.reduce(
+      (acc, curr) => acc + (Number(curr.headcount) || 0),
+      0
+    ) + 72000;
+
+  const averageOccupancy = Math.min(
+    98,
+    Math.round(
+      (safeZones.reduce(
+        (acc, curr) => acc + (Number(curr.occupancy_pct) || 0),
+        0
+      ) /
+        (safeZones.length || 1)) +
+      12
+    )
+  );
+
+  const openGatesCount =
+    safeZones.filter(
+      (z) => (Number(z.occupancy_pct) || 0) < 95
+    ).length + 12;
+
+  const criticalCount = safeIncidents.filter(
+    (i) => i.severity === "Critical" || i.severity === "High"
+  ).length;
+
+  const medicalCount = safeIncidents.filter(
+    (i) => i.type?.includes("Medical")
+  ).length;
+
+  const currentZoneData =
+    safeZones.find((z) => z.zone_id === selectedZone) ??
+    safeZones[0] ??
+    null;
   const resolveIncidentSimulation = (id: string, title: string) => {
     store.resolveIncident(id);
     store.addNotification('Incident Resolved', `Incident "${title}" cleared from log.`, 'low');
   };
 
-  const totalHeadcount = displayZones.reduce((acc, curr) => acc + curr.headcount, 0) + 72000; // Adding base seating count
-  const averageOccupancy = Math.min(98, Math.round(displayZones.reduce((acc, curr) => acc + curr.occupancy_pct, 0) / displayZones.length + 12));
-  const openGatesCount = displayZones.filter(z => z.occupancy_pct < 95).length + 12;
-  const criticalCount = displayIncidents.filter(i => i.severity === 'Critical' || i.severity === 'High').length;
-  const medicalCount = displayIncidents.filter(i => i.type.includes('Medical')).length;
-
-  const currentZoneData = displayZones.find(z => z.zone_id === selectedZone) || displayZones[0];
+  
 
   return (
     <div className="p-8 text-[#F8FAFC] space-y-8 font-sans selection:bg-[#DE638A]/20 relative">
