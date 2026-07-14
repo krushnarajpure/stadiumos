@@ -1,3 +1,4 @@
+
 import React, { useEffect, useState } from 'react';
 import { useOpsStore } from '../store/opsStore';
 import { dashboardService } from '../services/dashboard';
@@ -90,6 +91,13 @@ const vendorDemandData = [
   { category: 'Program/Gifts', sales: 8700, predicted: 9000 },
 ];
 
+const normalizeArray = (data: any): any[] => {
+  if (Array.isArray(data)) return data;
+  if (data && Array.isArray(data.data)) return data.data;
+  if (data && Array.isArray(data.items)) return data.items;
+  return [];
+};
+
 export const Dashboard: React.FC = () => {
   const store = useOpsStore();
   const [selectedZone, setSelectedZone] = useState<string>('ZONE_GATE_A');
@@ -118,26 +126,49 @@ export const Dashboard: React.FC = () => {
     { agent_name: 'Concessions Forecaster', response_text: 'Beverage stocks at East Concourse Kiosk 3 will deplete in 15 minutes. Dispatch stock replenishing runner from central hub.', recommended_actions: ['Dispatch replenish runner'] }
   ];
 
-  // Sync display with global store
-  const displayZones = store.crowdMetrics;
-  const displayIncidents = store.incidents;
-  const displayRecommendations = store.recommendations;
-  const timelineEvents = store.timelineEvents;
+  // Sync display with global store - normalized safely
+  const rawZones = normalizeArray(store?.crowdMetrics);
+  const rawIncidents = normalizeArray(store?.incidents);
+  const rawRecommendations = normalizeArray(store?.recommendations);
+
+  const displayZones = rawZones.length > 0 ? rawZones : fallbackZones;
+  const displayIncidents = rawIncidents.length > 0 ? rawIncidents : fallbackIncidents;
+  const displayRecommendations = rawRecommendations.length > 0 ? rawRecommendations : fallbackRecommendations;
+  const timelineEvents = normalizeArray(store?.timelineEvents);
+
+  const safeAttendanceData = normalizeArray(attendanceTrendData);
+  const safeQueueData = normalizeArray(queueWaitingTimeData);
+  const safePredictionData = normalizeArray(crowdPredictionData);
+  const safeEmergencyData = normalizeArray(emergencyTimelineData);
+  const safeVendorData = normalizeArray(vendorDemandData);
 
   useEffect(() => {
-    wsClient.connectAll();
+    const isVercel = window?.location?.hostname?.includes("vercel.app");
+
+    if (!isVercel) {
+      try {
+        wsClient?.connectAll?.();
+      } catch (e) {
+        console.error("WebSocket Connection Failed", e);
+      }
+    }
 
     const fetchOpsData = async () => {
       setIsRefreshing(true);
       try {
         const [heatmap, incidents, lowStock] = await Promise.all([
-          dashboardService.getCrowdHeatmap(),
-          dashboardService.getIncidents(),
-          dashboardService.getLowStockInventory(),
+          dashboardService?.getCrowdHeatmap?.().catch(() => []),
+          dashboardService?.getIncidents?.().catch(() => []),
+          dashboardService?.getLowStockInventory?.().catch(() => []),
         ]);
-        if (heatmap && heatmap.length > 0) store.setCrowdMetrics(heatmap);
-        if (incidents && incidents.length > 0) store.setIncidents(incidents);
-        if (lowStock && lowStock.length > 0) store.setInventories(lowStock);
+
+        const safeHeatmap = normalizeArray(heatmap);
+        const safeIncidents = normalizeArray(incidents);
+        const safeLowStock = normalizeArray(lowStock);
+
+        if (safeHeatmap?.length > 0) store?.setCrowdMetrics?.(safeHeatmap);
+        if (safeIncidents?.length > 0) store?.setIncidents?.(safeIncidents);
+        if (safeLowStock?.length > 0) store?.setInventories?.(safeLowStock);
       } catch (e) {
         // Fallbacks silently handle the data absence
       } finally {
@@ -146,74 +177,53 @@ export const Dashboard: React.FC = () => {
     };
 
     fetchOpsData();
-    return () => wsClient.disconnectAll();
+    return () => {
+      if (!isVercel) {
+        try {
+          wsClient?.disconnectAll?.();
+        } catch (e) {
+          // Ignore unmount WS errors
+        }
+      }
+    };
   }, []);
 
   const triggerActionSimulation = (action: string, agentName: string) => {
-    setSimulationAlert(`[DISPATCH SYSTEM] Dispatched command: "${action}" requested by ${agentName}`);
-    
+    setSimulationAlert(`[DISPATCH SYSTEM] Dispatched command: "${action || ''}" requested by ${agentName || 'System'}`);
+
     // Add to timeline
     const now = new Date();
-    const timeStr = now.toTimeString().split(' ')[0];
-    
-    useOpsStore.setState((state) => ({
-      timelineEvents: [
-        { id: `t-act-${Date.now()}`, time: timeStr, text: `AI Action Executed: "${action}" (triggered via Command Console)`, type: 'action' },
-        ...state.timelineEvents
-      ]
-    }));
+    const timeStr = now.toTimeString().split(' ')?.[0] || '00:00:00';
 
-    // Alert toast
-    store.addNotification('AI Recommendation Executed', `Action "${action}" deployed.`, 'low');
+    useOpsStore.setState((state) => {
+      const safePrevEvents = normalizeArray(state?.timelineEvents);
+      return {
+        timelineEvents: [
+          { id: `t-act-${Date.now()}`, time: timeStr, text: `AI Action Executed: "${action || ''}" (triggered via Command Console)`, type: 'action' },
+          ...safePrevEvents
+        ]
+      };
+    });
+
+    store?.addNotification?.('AI Recommendation Executed', `Action "${action || ''}" deployed.`, 'low');
 
     setTimeout(() => {
       setSimulationAlert(null);
     }, 4000);
   };
-  const safeZones = Array.isArray(displayZones) ? displayZones : [];
-  const safeIncidents = Array.isArray(displayIncidents) ? displayIncidents : [];
 
-  const totalHeadcount =
-    safeZones.reduce(
-      (acc, curr) => acc + (Number(curr.headcount) || 0),
-      0
-    ) + 72000;
-
-  const averageOccupancy = Math.min(
-    98,
-    Math.round(
-      (safeZones.reduce(
-        (acc, curr) => acc + (Number(curr.occupancy_pct) || 0),
-        0
-      ) /
-        (safeZones.length || 1)) +
-      12
-    )
-  );
-
-  const openGatesCount =
-    safeZones.filter(
-      (z) => (Number(z.occupancy_pct) || 0) < 95
-    ).length + 12;
-
-  const criticalCount = safeIncidents.filter(
-    (i) => i.severity === "Critical" || i.severity === "High"
-  ).length;
-
-  const medicalCount = safeIncidents.filter(
-    (i) => i.type?.includes("Medical")
-  ).length;
-
-  const currentZoneData =
-    safeZones.find((z) => z.zone_id === selectedZone) ??
-    safeZones[0] ??
-    null;
   const resolveIncidentSimulation = (id: string, title: string) => {
-    store.resolveIncident(id);
-    store.addNotification('Incident Resolved', `Incident "${title}" cleared from log.`, 'low');
+    store?.resolveIncident?.(id);
+    store?.addNotification?.('Incident Resolved', `Incident "${title || 'Unknown'}" cleared from log.`, 'low');
   };
 
-  
+  const totalHeadcount = displayZones.reduce((acc, curr) => acc + (curr?.headcount || 0), 0) + 72000;
+  const averageOccupancy = Math.min(98, Math.round(displayZones.reduce((acc, curr) => acc + (curr?.occupancy_pct || 0), 0) / (displayZones.length || 1) + 12));
+  const openGatesCount = displayZones.filter(z => (z?.occupancy_pct || 0) < 95).length + 12;
+  const criticalCount = displayIncidents.filter(i => i?.severity === 'Critical' || i?.severity === 'High').length;
+  const medicalCount = displayIncidents.filter(i => i?.type?.includes?.('Medical')).length;
+
+  const currentZoneData = displayZones.find(z => z?.zone_id === selectedZone) || displayZones[0] || {};
 
   return (
     <div className="p-8 text-[#F8FAFC] space-y-8 font-sans selection:bg-[#DE638A]/20 relative">
@@ -251,8 +261,13 @@ export const Dashboard: React.FC = () => {
           <Button
             size="small"
             onClick={() => {
-              wsClient.disconnectAll();
-              wsClient.connectAll();
+              const isVercel = window?.location?.hostname?.includes("vercel.app");
+              if (!isVercel) {
+                try {
+                  wsClient?.disconnectAll?.();
+                  wsClient?.connectAll?.();
+                } catch (e) { }
+              }
             }}
             startIcon={<RefreshCw className="w-3.5 h-3.5" />}
             className="border border-white/5 hover:bg-white/5 text-[#94A3B8] hover:text-white px-4 py-2 text-xs uppercase tracking-wider rounded-xl transition-all duration-300 font-bold"
@@ -268,12 +283,12 @@ export const Dashboard: React.FC = () => {
 
       {/* Three Column Main Dashboard Area */}
       <div className="grid grid-cols-1 xl:grid-cols-4 gap-8">
-        
+
         {/* Main Content Area (Columns 1-3) */}
         <div className="xl:col-span-3 space-y-8">
-                    {/* Section 1: Live Metrics Cards Grid */}
+          {/* Section 1: Live Metrics Cards Grid */}
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
-            
+
             {/* Card 1: Attendance */}
             <div className="glass-panel p-5 rounded-2xl flex flex-col justify-between h-36 border border-white/5 col-span-1 xl:col-span-2">
               <div className="flex justify-between items-start">
@@ -281,7 +296,7 @@ export const Dashboard: React.FC = () => {
                 <Users className="w-4 h-4 text-[#DE638A]" />
               </div>
               <div className="mt-2">
-                <div className="text-xl font-extrabold font-display text-white">{totalHeadcount.toLocaleString()}</div>
+                <div className="text-xl font-extrabold font-display text-white">{(totalHeadcount || 0).toLocaleString()}</div>
                 <div className="text-[10px] text-[#94A3B8] mt-1">89.1% Total Seating</div>
               </div>
               <div className="w-full bg-white/5 rounded-full h-1.5 mt-2">
@@ -296,11 +311,11 @@ export const Dashboard: React.FC = () => {
                 <Activity className="w-4 h-4 text-[#EF4444]" />
               </div>
               <div className="mt-2">
-                <div className="text-xl font-extrabold font-display text-[#EF4444]">{averageOccupancy}%</div>
+                <div className="text-xl font-extrabold font-display text-[#EF4444]">{averageOccupancy || 0}%</div>
                 <div className="text-[10px] text-[#94A3B8] mt-1">Average Stand Fill</div>
               </div>
               <div className="w-full bg-white/5 rounded-full h-1.5 mt-2">
-                <div className="bg-red-500 h-1.5 rounded-full" style={{ width: `${averageOccupancy}%` }}></div>
+                <div className="bg-red-500 h-1.5 rounded-full" style={{ width: `${averageOccupancy || 0}%` }}></div>
               </div>
             </div>
 
@@ -311,11 +326,11 @@ export const Dashboard: React.FC = () => {
                 <Unlock className="w-4 h-4 text-[#22C55E]" />
               </div>
               <div className="mt-2">
-                <div className="text-xl font-extrabold font-display text-[#22C55E]">{openGatesCount} / 20</div>
+                <div className="text-xl font-extrabold font-display text-[#22C55E]">{openGatesCount || 0} / 20</div>
                 <div className="text-[10px] text-[#94A3B8] mt-1">Turnstiles Operating</div>
               </div>
               <div className="w-full bg-white/5 rounded-full h-1.5 mt-2">
-                <div className="bg-[#22C55E] h-1.5 rounded-full animate-pulse" style={{ width: `${(openGatesCount/20)*100}%` }}></div>
+                <div className="bg-[#22C55E] h-1.5 rounded-full animate-pulse" style={{ width: `${((openGatesCount || 0) / 20) * 100}%` }}></div>
               </div>
             </div>
 
@@ -326,11 +341,11 @@ export const Dashboard: React.FC = () => {
                 <AlertTriangle className="w-4 h-4 text-[#F59E0B]" />
               </div>
               <div className="mt-2">
-                <div className="text-xl font-extrabold font-display text-[#F59E0B]">{displayIncidents.length}</div>
-                <div className="text-[10px] text-[#94A3B8] mt-1">{criticalCount} High Severity</div>
+                <div className="text-xl font-extrabold font-display text-[#F59E0B]">{displayIncidents.length || 0}</div>
+                <div className="text-[10px] text-[#94A3B8] mt-1">{criticalCount || 0} High Severity</div>
               </div>
               <div className="w-full bg-white/5 rounded-full h-1.5 mt-2">
-                <div className="bg-[#F59E0B] h-1.5 rounded-full" style={{ width: `${(displayIncidents.length/10)*100}%` }}></div>
+                <div className="bg-[#F59E0B] h-1.5 rounded-full" style={{ width: `${((displayIncidents.length || 0) / 10) * 100}%` }}></div>
               </div>
             </div>
 
@@ -341,11 +356,11 @@ export const Dashboard: React.FC = () => {
                 <HeartPulse className="w-4 h-4 text-[#EF4444]" />
               </div>
               <div className="mt-2">
-                <div className="text-xl font-extrabold font-display text-white">{medicalCount}</div>
+                <div className="text-xl font-extrabold font-display text-white">{medicalCount || 0}</div>
                 <div className="text-[10px] text-[#94A3B8] mt-1">Dispatches Active</div>
               </div>
               <div className="w-full bg-white/5 rounded-full h-1.5 mt-2">
-                <div className="bg-[#EF4444] h-1.5 rounded-full" style={{ width: `${medicalCount > 0 ? 60 : 0}%` }}></div>
+                <div className="bg-[#EF4444] h-1.5 rounded-full" style={{ width: `${(medicalCount || 0) > 0 ? 60 : 0}%` }}></div>
               </div>
             </div>
 
@@ -382,7 +397,7 @@ export const Dashboard: React.FC = () => {
 
           {/* Section 2: Crowd Heatmap & Interactive Stand Inspector */}
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-            
+
             {/* Interactive Heatmap Map Widget (M-3 Telemetry) */}
             <div className="lg:col-span-2 glass-panel p-6 rounded-2xl flex flex-col">
               <div className="flex justify-between items-start border-b border-white/5 pb-4">
@@ -401,7 +416,7 @@ export const Dashboard: React.FC = () => {
               {/* Heatmap Visual Canvas */}
               <div className="flex-1 flex flex-col justify-center items-center py-6">
                 <div className="relative w-full max-w-[460px] aspect-[4/3] border border-white/5 rounded-full p-6 bg-[#180F25]/50 flex items-center justify-center">
-                  
+
                   {/* Outer Rings representing Stand Sections */}
                   <div className="absolute inset-4 border border-white/5 rounded-full"></div>
                   <div className="absolute inset-12 border border-white/5 rounded-full"></div>
@@ -424,12 +439,12 @@ export const Dashboard: React.FC = () => {
                       { top: '15%', left: '78%' },  // Parking lot C
                       { bottom: '15%', left: '14%' },// Exit 4 corridor
                     ];
-                    
+
                     const coord = sectorCoordinates[idx] || { top: '50%', left: '50%' };
-                    
-                    const isSelected = selectedZone === zone.zone_id;
-                    const isCritical = zone.status === 'Critical';
-                    const isBusy = zone.status === 'Busy';
+
+                    const isSelected = selectedZone === zone?.zone_id;
+                    const isCritical = zone?.status === 'Critical';
+                    const isBusy = zone?.status === 'Busy';
 
                     let colorClasses = 'bg-[#22C55E]/80 border-[#22C55E] shadow-[#22C55E]/20 text-white';
                     if (isCritical) colorClasses = 'bg-[#EF4444]/90 border-[#EF4444] shadow-[#EF4444]/40 text-white animate-pulse';
@@ -437,8 +452,8 @@ export const Dashboard: React.FC = () => {
 
                     return (
                       <button
-                        key={zone.zone_id}
-                        onClick={() => setSelectedZone(zone.zone_id)}
+                        key={zone?.zone_id || `zone-${idx}`}
+                        onClick={() => setSelectedZone(zone?.zone_id || '')}
                         style={{
                           position: 'absolute',
                           top: coord.top,
@@ -446,12 +461,11 @@ export const Dashboard: React.FC = () => {
                           left: coord.left,
                           transform: 'translate(-50%, -50%)',
                         }}
-                        className={`px-3 py-1.5 rounded-lg border font-mono font-bold text-[9px] tracking-wide shadow-lg cursor-pointer transition-all duration-300 hover:scale-110 active:scale-95 ${colorClasses} ${
-                          isSelected ? 'ring-2 ring-[#F7B9C4] scale-105 border-white' : ''
-                        }`}
+                        className={`px-3 py-1.5 rounded-lg border font-mono font-bold text-[9px] tracking-wide shadow-lg cursor-pointer transition-all duration-300 hover:scale-110 active:scale-95 ${colorClasses} ${isSelected ? 'ring-2 ring-[#F7B9C4] scale-105 border-white' : ''
+                          }`}
                       >
-                        <div>{zone.zone_name.split(' ')[0]}</div>
-                        <div>{zone.occupancy_pct}%</div>
+                        <div>{zone?.zone_name?.split?.(' ')?.[0] || 'Zone'}</div>
+                        <div>{zone?.occupancy_pct || 0}%</div>
                       </button>
                     );
                   })}
@@ -470,30 +484,28 @@ export const Dashboard: React.FC = () => {
                 <div className="mt-4 space-y-4">
                   <div>
                     <span className="text-[10px] text-[#94A3B8] uppercase font-bold tracking-wider">Sector Label:</span>
-                    <h4 className="text-lg font-bold text-white">{currentZoneData.zone_name}</h4>
+                    <h4 className="text-lg font-bold text-white">{currentZoneData?.zone_name || 'Unknown Sector'}</h4>
                   </div>
 
                   <div className="grid grid-cols-2 gap-4">
                     <div>
                       <span className="text-[10px] text-[#94A3B8] uppercase font-bold tracking-wider">Headcount:</span>
-                      <div className="text-base font-extrabold text-white">{currentZoneData.headcount} / 2,000</div>
+                      <div className="text-base font-extrabold text-white">{currentZoneData?.headcount || 0} / 2,000</div>
                     </div>
                     <div>
                       <span className="text-[10px] text-[#94A3B8] uppercase font-bold tracking-wider">Occupancy Index:</span>
-                      <div className={`text-base font-extrabold ${
-                        currentZoneData.status === 'Critical' ? 'text-[#EF4444]' : currentZoneData.status === 'Busy' ? 'text-[#F59E0B]' : 'text-[#22C55E]'
-                      }`}>{currentZoneData.occupancy_pct}%</div>
+                      <div className={`text-base font-extrabold ${currentZoneData?.status === 'Critical' ? 'text-[#EF4444]' : currentZoneData?.status === 'Busy' ? 'text-[#F59E0B]' : 'text-[#22C55E]'
+                        }`}>{currentZoneData?.occupancy_pct || 0}%</div>
                     </div>
                   </div>
 
                   <div>
                     <span className="text-[10px] text-[#94A3B8] uppercase font-bold tracking-wider">Zone Safety Status:</span>
                     <div className="mt-1 flex items-center space-x-2">
-                      <span className={`w-2.5 h-2.5 rounded-full ${
-                        currentZoneData.status === 'Critical' ? 'bg-[#EF4444] pulse-indicator' : currentZoneData.status === 'Busy' ? 'bg-[#F59E0B]' : 'bg-[#22C55E]'
-                      }`} />
+                      <span className={`w-2.5 h-2.5 rounded-full ${currentZoneData?.status === 'Critical' ? 'bg-[#EF4444] pulse-indicator' : currentZoneData?.status === 'Busy' ? 'bg-[#F59E0B]' : 'bg-[#22C55E]'
+                        }`} />
                       <span className="text-xs font-bold uppercase tracking-widest font-mono">
-                        {currentZoneData.status} Capacity Level
+                        {currentZoneData?.status || 'Normal'} Capacity Level
                       </span>
                     </div>
                   </div>
@@ -501,11 +513,11 @@ export const Dashboard: React.FC = () => {
                   <div className="bg-[#111A33] border border-white/5 p-4 rounded-xl space-y-2">
                     <div className="text-[9px] text-[#94A3B8] font-bold uppercase tracking-wider">Safety SOP Trigger Guidelines:</div>
                     <p className="text-[10px] text-gray-300 leading-relaxed font-sans">
-                      {currentZoneData.status === 'Critical'
+                      {currentZoneData?.status === 'Critical'
                         ? 'SOP Critical: Open Gate overflow bypass channels, issue audio warning, deploy crowd control volunteer squads to Section 102.'
-                        : currentZoneData.status === 'Busy'
-                        ? 'SOP Busy: Hold ingress scanners periodically, check ticket bottlenecks, prepare backup volunteer squads.'
-                        : 'SOP Normal: Operations normal. Scan tickets, register attendee ingress flow, standard surveillance scan.'
+                        : currentZoneData?.status === 'Busy'
+                          ? 'SOP Busy: Hold ingress scanners periodically, check ticket bottlenecks, prepare backup volunteer squads.'
+                          : 'SOP Normal: Operations normal. Scan tickets, register attendee ingress flow, standard surveillance scan.'
                       }
                     </p>
                   </div>
@@ -514,7 +526,7 @@ export const Dashboard: React.FC = () => {
 
               <div className="mt-4 pt-4 border-t border-white/5 flex items-center justify-between text-xs text-[#94A3B8]">
                 <span>Telemetry UUID:</span>
-                <span className="font-mono text-[10px] text-[#00E5FF]">{currentZoneData.zone_id}</span>
+                <span className="font-mono text-[10px] text-[#00E5FF]">{currentZoneData?.zone_id || 'N/A'}</span>
               </div>
             </div>
 
@@ -522,7 +534,7 @@ export const Dashboard: React.FC = () => {
 
           {/* Section 3: Charts Layout Grid */}
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-            
+
             {/* Chart 1: Attendance Trend */}
             <div className="glass-panel p-6 rounded-2xl h-[340px] flex flex-col">
               <div className="border-b border-white/5 pb-3 mb-4">
@@ -531,7 +543,7 @@ export const Dashboard: React.FC = () => {
               </div>
               <div className="flex-1 w-full">
                 <ResponsiveContainer width="100%" height="100%">
-                  <AreaChart data={attendanceTrendData} margin={{ left: -20, bottom: 0 }}>
+                  <AreaChart data={safeAttendanceData} margin={{ left: -20, bottom: 0 }}>
                     <defs>
                       <linearGradient id="colorSpectators" x1="0" y1="0" x2="0" y2="1">
                         <stop offset="5%" stopColor="#DE638A" stopOpacity={0.25} />
@@ -561,7 +573,7 @@ export const Dashboard: React.FC = () => {
               </div>
               <div className="flex-1 w-full">
                 <ResponsiveContainer width="100%" height="100%">
-                  <BarChart data={queueWaitingTimeData} margin={{ left: -20, bottom: 0 }}>
+                  <BarChart data={safeQueueData} margin={{ left: -20, bottom: 0 }}>
                     <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.03)" vertical={false} />
                     <XAxis dataKey="name" stroke="#94A3B8" fontSize={8} axisLine={false} tickLine={false} />
                     <YAxis stroke="#94A3B8" fontSize={9} axisLine={false} tickLine={false} />
@@ -582,7 +594,7 @@ export const Dashboard: React.FC = () => {
               </div>
               <div className="flex-1 w-full">
                 <ResponsiveContainer width="100%" height="100%">
-                  <LineChart data={crowdPredictionData} margin={{ left: -10, bottom: 0 }}>
+                  <LineChart data={safePredictionData} margin={{ left: -10, bottom: 0 }}>
                     <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.03)" vertical={false} />
                     <XAxis dataKey="time" stroke="#94A3B8" fontSize={9} axisLine={false} tickLine={false} />
                     <YAxis stroke="#94A3B8" fontSize={9} axisLine={false} tickLine={false} />
@@ -603,7 +615,7 @@ export const Dashboard: React.FC = () => {
               </div>
               <div className="flex-1 w-full">
                 <ResponsiveContainer width="100%" height="100%">
-                  <LineChart data={emergencyTimelineData} margin={{ left: -20, bottom: 0 }}>
+                  <LineChart data={safeEmergencyData} margin={{ left: -20, bottom: 0 }}>
                     <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.03)" vertical={false} />
                     <XAxis dataKey="hour" stroke="#94A3B8" fontSize={9} axisLine={false} tickLine={false} />
                     <YAxis stroke="#94A3B8" fontSize={9} axisLine={false} tickLine={false} />
@@ -625,7 +637,7 @@ export const Dashboard: React.FC = () => {
               </div>
               <div className="flex-1 w-full">
                 <ResponsiveContainer width="100%" height="100%">
-                  <ComposedChart data={vendorDemandData} margin={{ left: -10, bottom: 0 }}>
+                  <ComposedChart data={safeVendorData} margin={{ left: -10, bottom: 0 }}>
                     <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.03)" vertical={false} />
                     <XAxis dataKey="category" stroke="#94A3B8" fontSize={9} axisLine={false} tickLine={false} />
                     <YAxis stroke="#94A3B8" fontSize={9} axisLine={false} tickLine={false} />
@@ -648,7 +660,7 @@ export const Dashboard: React.FC = () => {
                 <p className="text-[10px] text-[#94A3B8] mt-0.5">Real-time incident dispatches and SLA timers. Dispatch commanders resolve items here.</p>
               </div>
               <Chip
-                label={`${displayIncidents.length} Unresolved`}
+                label={`${displayIncidents.length || 0} Unresolved`}
                 size="small"
                 className="bg-[#EF4444]/15 border border-[#EF4444]/30 text-[#EF4444] font-bold text-[9px] uppercase tracking-wider"
               />
@@ -656,36 +668,36 @@ export const Dashboard: React.FC = () => {
 
             <div className="mt-4 space-y-3">
               {displayIncidents.length > 0 ? (
-                displayIncidents.map((incident) => {
-                  const isCritical = incident.severity === 'Critical';
-                  const isHigh = incident.severity === 'High';
-                  
+                displayIncidents.map((incident, idx) => {
+                  const isCritical = incident?.severity === 'Critical';
+                  const isHigh = incident?.severity === 'High';
+                  const isMedical = incident?.type?.includes?.('Medical');
+
                   let badgeColors = 'bg-white/5 border-white/10 text-white';
                   if (isCritical) badgeColors = 'bg-[#EF4444]/10 border-[#EF4444]/20 text-[#EF4444]';
                   else if (isHigh) badgeColors = 'bg-[#F59E0B]/10 border-[#F59E0B]/20 text-[#F59E0B]';
 
                   return (
-                    <div key={incident.id} className="flex flex-col md:flex-row items-start md:items-center justify-between p-4 bg-[#0B1228]/50 border border-white/5 rounded-xl gap-4 hover:border-white/10 transition-all duration-300">
+                    <div key={incident?.id || `incident-${idx}`} className="flex flex-col md:flex-row items-start md:items-center justify-between p-4 bg-[#0B1228]/50 border border-white/5 rounded-xl gap-4 hover:border-white/10 transition-all duration-300">
                       <div className="flex items-start space-x-3">
-                        <Avatar className={`w-8 h-8 rounded-lg ${
-                          incident.type.includes('Medical') ? 'bg-[#EF4444]/10 text-[#EF4444]' : 'bg-[#F59E0B]/10 text-[#F59E0B]'
-                        }`} style={{ width: 32, height: 32 }}>
-                          {incident.type.includes('Medical') ? <HeartPulse className="w-4 h-4" /> : <Shield className="w-4 h-4" />}
+                        <Avatar className={`w-8 h-8 rounded-lg ${isMedical ? 'bg-[#EF4444]/10 text-[#EF4444]' : 'bg-[#F59E0B]/10 text-[#F59E0B]'
+                          }`} style={{ width: 32, height: 32 }}>
+                          {isMedical ? <HeartPulse className="w-4 h-4" /> : <Shield className="w-4 h-4" />}
                         </Avatar>
                         <div>
                           <div className="flex items-center space-x-2">
-                            <span className="text-xs font-semibold text-white">{incident.title}</span>
+                            <span className="text-xs font-semibold text-white">{incident?.title || 'Unknown Alert'}</span>
                             <span className={`text-[8px] font-bold font-mono px-1.5 py-0.5 border rounded uppercase ${badgeColors}`}>
-                              {incident.severity}
+                              {incident?.severity || 'Normal'}
                             </span>
                           </div>
-                          <p className="text-[10px] text-gray-300 mt-1 leading-relaxed">{incident.description}</p>
+                          <p className="text-[10px] text-gray-300 mt-1 leading-relaxed">{incident?.description || 'No details provided.'}</p>
                           <div className="flex items-center space-x-3 text-[9px] text-[#94A3B8] font-bold uppercase tracking-wider mt-1.5">
-                            <span>Type: {incident.type}</span>
+                            <span>Type: {incident?.type || 'System'}</span>
                             <span>·</span>
-                            <span>Zone: {incident.zone_id}</span>
+                            <span>Zone: {incident?.zone_id || 'Global'}</span>
                             <span>·</span>
-                            <span>Reported: {new Date(incident.reported_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
+                            <span>Reported: {new Date(incident?.reported_at || Date.now()).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
                           </div>
                         </div>
                       </div>
@@ -693,11 +705,11 @@ export const Dashboard: React.FC = () => {
                       <div className="flex items-center space-x-3 w-full md:w-auto justify-end border-t md:border-t-0 border-white/5 pt-3 md:pt-0">
                         <div className="text-right">
                           <span className="text-[8px] text-[#94A3B8] font-bold uppercase block tracking-wider">Status:</span>
-                          <span className="text-xs font-extrabold text-[#00E5FF] uppercase font-mono">{incident.status}</span>
+                          <span className="text-xs font-extrabold text-[#00E5FF] uppercase font-mono">{incident?.status || 'Open'}</span>
                         </div>
                         <Button
                           size="small"
-                          onClick={() => resolveIncidentSimulation(incident.id, incident.title)}
+                          onClick={() => resolveIncidentSimulation(incident?.id || '', incident?.title || '')}
                           className="bg-[#22C55E]/15 hover:bg-[#22C55E]/25 text-[#22C55E] text-[10px] font-bold uppercase tracking-wider px-3.5 py-1.5 rounded-xl border border-[#22C55E]/30"
                         >
                           Resolve Case
@@ -719,12 +731,12 @@ export const Dashboard: React.FC = () => {
 
         {/* Right Panel Layout (Column 4) */}
         <div className="space-y-8">
-          
+
           {/* Widget 1: AI Assistant Recommendations (Interactive Actions) */}
           <div className="glass-panel p-6 rounded-2xl flex flex-col border border-white/5 shadow-lg relative overflow-hidden">
             {/* Glowing neon top stripe for AI brand accent */}
             <div className="absolute top-0 inset-x-0 h-[2px] bg-gradient-to-r from-[#8B5CF6] via-[#00E5FF] to-transparent"></div>
-            
+
             <div className="flex items-center justify-between border-b border-white/5 pb-4">
               <div className="flex items-center space-x-2">
                 <Cpu className="w-4 h-4 text-[#8B5CF6]" />
@@ -737,31 +749,34 @@ export const Dashboard: React.FC = () => {
 
             <div className="mt-4 space-y-4 flex-1 overflow-y-auto max-h-[360px] pr-1">
               {displayRecommendations.length > 0 ? (
-                displayRecommendations.map((rec, idx) => (
-                  <div key={idx} className="p-4 bg-[#0B1228]/60 border border-[#8B5CF6]/10 rounded-xl space-y-3">
-                    <div className="flex justify-between items-center">
-                      <span className="text-[9px] font-bold text-[#C084FC] font-mono uppercase tracking-wider">
-                        {rec.agent_name}
-                      </span>
-                      <Zap className="w-3.5 h-3.5 text-[#00E5FF] animate-pulse" />
+                displayRecommendations.map((rec, idx) => {
+                  const safeActions = normalizeArray(rec?.recommended_actions);
+                  return (
+                    <div key={idx} className="p-4 bg-[#0B1228]/60 border border-[#8B5CF6]/10 rounded-xl space-y-3">
+                      <div className="flex justify-between items-center">
+                        <span className="text-[9px] font-bold text-[#C084FC] font-mono uppercase tracking-wider">
+                          {rec?.agent_name || 'System Assistant'}
+                        </span>
+                        <Zap className="w-3.5 h-3.5 text-[#00E5FF] animate-pulse" />
+                      </div>
+                      <p className="text-[11px] text-gray-300 leading-relaxed font-sans">
+                        {rec?.response_text || 'Recommended system adjustments available.'}
+                      </p>
+
+                      {safeActions.length > 0 && safeActions.map((act, actionIdx) => (
+                        <Button
+                          key={`act-${actionIdx}`}
+                          size="small"
+                          onClick={() => triggerActionSimulation(act, rec?.agent_name || 'System')}
+                          endIcon={<ArrowRight className="w-3 h-3" />}
+                          className="w-full bg-gradient-to-r from-[#8B5CF6]/10 to-[#8B5CF6]/20 border border-[#8B5CF6]/30 hover:border-[#8B5CF6] text-white text-[10px] font-bold uppercase tracking-wider py-1.5 rounded-xl transition-all duration-300 mt-2"
+                        >
+                          Execute Dispatch
+                        </Button>
+                      ))}
                     </div>
-                    <p className="text-[11px] text-gray-300 leading-relaxed font-sans">
-                      {rec.response_text}
-                    </p>
-                    
-                    {rec.recommended_actions && rec.recommended_actions.map((act, actionIdx) => (
-                      <Button
-                        key={actionIdx}
-                        size="small"
-                        onClick={() => triggerActionSimulation(act, rec.agent_name)}
-                        endIcon={<ArrowRight className="w-3 h-3" />}
-                        className="w-full bg-gradient-to-r from-[#8B5CF6]/10 to-[#8B5CF6]/20 border border-[#8B5CF6]/30 hover:border-[#8B5CF6] text-white text-[10px] font-bold uppercase tracking-wider py-1.5 rounded-xl transition-all duration-300 mt-2"
-                      >
-                        Execute Dispatch
-                      </Button>
-                    ))}
-                  </div>
-                ))
+                  );
+                })
               ) : (
                 <div className="flex flex-col items-center justify-center py-10 text-center text-[#94A3B8] text-xs">
                   <Star className="w-7 h-7 text-[#8B5CF6] mb-2" />
@@ -808,14 +823,13 @@ export const Dashboard: React.FC = () => {
               {timelineEvents.map((evt, idx) => (
                 <div key={idx} className="relative">
                   {/* Custom timeline bullet dot */}
-                  <span className={`absolute -left-[20.5px] top-1 w-2.5 h-2.5 rounded-full border border-[#050B1C] ${
-                    evt.type === 'action' ? 'bg-[#8B5CF6]' : evt.type === 'alert' ? 'bg-[#EF4444]' : evt.type === 'resolve' ? 'bg-[#22C55E]' : 'bg-[#00E5FF]'
-                  }`} />
+                  <span className={`absolute -left-[20.5px] top-1 w-2.5 h-2.5 rounded-full border border-[#050B1C] ${evt?.type === 'action' ? 'bg-[#8B5CF6]' : evt?.type === 'alert' ? 'bg-[#EF4444]' : evt?.type === 'resolve' ? 'bg-[#22C55E]' : 'bg-[#00E5FF]'
+                    }`} />
                   <div className="flex justify-between items-center text-[9px] text-[#94A3B8] font-bold font-mono">
                     <span className="uppercase tracking-wider">EVENT FEED</span>
-                    <span>{evt.time}</span>
+                    <span>{evt?.time || 'Live'}</span>
                   </div>
-                  <p className="text-[10px] text-gray-300 mt-0.5 leading-relaxed">{evt.text}</p>
+                  <p className="text-[10px] text-gray-300 mt-0.5 leading-relaxed">{evt?.text || 'System event recorded'}</p>
                 </div>
               ))}
             </div>
@@ -861,7 +875,7 @@ export const Dashboard: React.FC = () => {
 
               <div className="space-y-2">
                 <div className="text-[9px] text-[#94A3B8] font-bold uppercase tracking-wider border-b border-white/5 pb-1">Hotzones Deployment:</div>
-                
+
                 <div className="flex justify-between items-center text-[10px]">
                   <span className="text-gray-300">North Turnstiles A</span>
                   <span className="font-mono text-white font-bold">32 volunteers</span>
